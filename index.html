@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>打工人世界 · 开放世界上班模拟</title>
 <style>
 :root{--bg:#1c2230;--panel:rgba(20,24,36,.82);--tx:#f2f4f8;--mut:#9aa4b8;--ac:#ffb84d;--ok:#5fd68a;--bad:#ff6b6b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -26,7 +26,22 @@ canvas{display:block;width:100%;height:100%}
 #card button{width:100%;padding:11px;border:0;border-radius:8px;background:var(--ac);color:#222;font-weight:700;font-size:16px;cursor:pointer}
 .mut{color:var(--mut);font-size:12px}
 #mp{position:fixed;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));font-size:12px}
-</style>
+html,body{touch-action:none;-webkit-user-select:none;user-select:none}
+#touch{display:none}
+@media (pointer:coarse){
+ #touch{display:block}
+ #joy{position:fixed;left:calc(22px + env(safe-area-inset-left,0px));bottom:calc(28px + env(safe-area-inset-bottom,0px));width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.14);border:2px solid rgba(255,255,255,.35);touch-action:none;z-index:3}
+ #knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:rgba(255,184,77,.85);pointer-events:none}
+ .tb{position:fixed;right:calc(22px + env(safe-area-inset-right,0px));width:68px;height:68px;border-radius:50%;background:rgba(20,24,36,.78);border:2px solid rgba(255,255,255,.4);color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;touch-action:none;z-index:3}
+ #bE{bottom:calc(48px + env(safe-area-inset-bottom,0px));background:rgba(255,184,77,.9);color:#222;width:84px;height:84px;font-size:22px}
+ #bR{bottom:calc(144px + env(safe-area-inset-bottom,0px));right:calc(118px + env(safe-area-inset-right,0px));width:56px;height:56px;font-size:13px}
+ #bR.on{background:#5fd68a;color:#222}
+ #bC{bottom:calc(144px + env(safe-area-inset-bottom,0px));width:56px;height:56px;font-size:20px}
+ #hint{bottom:calc(190px + env(safe-area-inset-bottom,0px))}
+ #log{bottom:auto;top:calc(110px + env(safe-area-inset-top,0px));width:min(300px,70vw)}
+ #mp{right:auto;left:8px;bottom:auto;top:calc(88px + env(safe-area-inset-top,0px))}
+ #chat{bottom:auto;top:calc(60px + env(safe-area-inset-top,0px));width:calc(100vw - 16px);z-index:6}
+}
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -42,11 +57,17 @@ canvas{display:block;width:100%;height:100%}
 <div id="log"></div>
 <input id="chat" maxlength="60" placeholder="输入消息，回车发送，Esc 取消">
 <div class="box" id="mp">单人模式</div>
+<div id="touch">
+  <div id="joy"><div id="knob"></div></div>
+  <div class="tb" id="bE">E</div>
+  <div class="tb" id="bR">快走</div>
+  <div class="tb" id="bC">💬</div>
+</div>
 <div id="over"><div id="card">
   <h1>🏢 打工人世界</h1>
   <div class="mut">开放世界 · 多人在线 · 上班模拟器</div>
   <p>准时打卡、在工位搬砖完成项目、开会点头、茶水间续命，别被老板抓到摸鱼。下班发薪水！</p>
-  <p class="mut">WASD / 方向键移动（Shift 快走）· E 交互（工位按住）· 回车聊天<br>打开同一页面的其他同事会实时出现在世界里。</p>
+  <p class="mut">WASD / 方向键移动（Shift 快走）· E 交互（工位按住）· 回车聊天<br>手机：左下摇杆移动，右侧按钮 E 交互（工位按住）/ 快走 / 聊天<br>打开同一页面的其他同事会实时出现在世界里。</p>
   <input id="nm" maxlength="8" placeholder="你的名字">
   <button id="go">开始上班</button>
 </div></div>
@@ -83,7 +104,7 @@ const spots=[ // 交互点
 // ---- 状态 ----
 const me={x:1000,y:960,vx:0,vy:0,name:'打工人'+(Math.floor(Math.random()*900)+100),col:'hsl('+Math.floor(Math.random()*360)+',70%,58%)',dir:1,act:'走',bub:'',bubT:0};
 const g={day:1,t:8*60+30,en:100,st:10,pr:0,money:0,done:0,late:false,paidLate:false,attend:0,fines:0,earned:0,run:false,over:false,dayStats:null};
-const keys={};
+const keys={},joy={x:0,y:0};
 let nearSpot=null,workHold=0,msgT=0;
 const peers=new Map(); // peer -> {x,y,name,col,bub,bubT,tx,ty,act}
 const boss={x:300,y:1150,tx:300,ty:1150,w:0,state:'idle'};
@@ -172,7 +193,8 @@ function update(dt){
  // 移动
  let ix=(keys['d']||keys['arrowright']?1:0)-(keys['a']||keys['arrowleft']?1:0);
  let iy=(keys['s']||keys['arrowdown']?1:0)-(keys['w']||keys['arrowup']?1:0);
- const m=Math.hypot(ix,iy);if(m>0){ix/=m;iy/=m}
+ if(joy.x||joy.y){ix=joy.x;iy=joy.y}
+ const m=Math.hypot(ix,iy);if(m>1){ix/=m;iy/=m}
  const run=keys['shift']&&g.en>10;
  const sp=(run?300:190)*(g.en<20?.65:1);
  working=false;
@@ -367,6 +389,25 @@ async function connect(){
   say(n+'：'+t);const o=peers.get(m.peer);if(o){o.bub=t;o.bubT=5}
  });
 }
+// ---- 触屏控制 ----
+(function(){
+ const jb=$('joy'),kn=$('knob'),R=45;let pid=null,cx=0,cy=0;
+ function upd(e){
+  const dx=e.clientX-cx,dy=e.clientY-cy,d=Math.hypot(dx,dy)||1,k=Math.min(1,d/R);
+  let x=dx/d*k,y=dy/d*k;if(k<.18){x=0;y=0}
+  joy.x=x;joy.y=y;kn.style.transform='translate('+x*R+'px,'+y*R+'px)';
+ }
+ function end(){pid=null;joy.x=0;joy.y=0;kn.style.transform=''}
+ jb.addEventListener('pointerdown',e=>{if(pid!==null)return;pid=e.pointerId;jb.setPointerCapture(pid);const r=jb.getBoundingClientRect();cx=r.left+r.width/2;cy=r.top+r.height/2;upd(e);e.preventDefault()});
+ jb.addEventListener('pointermove',e=>{if(e.pointerId===pid)upd(e)});
+ ['pointerup','pointercancel','lostpointercapture'].forEach(t=>jb.addEventListener(t,e=>{if(e.pointerId===pid)end()}));
+ const bE=$('bE');
+ bE.addEventListener('pointerdown',e=>{e.preventDefault();bE.setPointerCapture(e.pointerId);keys['e']=true;if(g.run)interact(true)});
+ ['pointerup','pointercancel'].forEach(t=>bE.addEventListener(t,()=>{keys['e']=false}));
+ $('bR').addEventListener('pointerdown',e=>{e.preventDefault();keys['shift']=!keys['shift'];$('bR').classList.toggle('on',!!keys['shift'])});
+ $('bC').addEventListener('pointerdown',e=>{e.preventDefault();if(!g.run)return;$('chat').style.display='block';$('chat').focus()});
+ document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
+})();
 $('nm').value=me.name;
 $('go').onclick=()=>{
  const v=$('nm').value.trim();if(v)me.name=v.slice(0,8);
