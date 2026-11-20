@@ -1,0 +1,10 @@
+{
+  "name": "office-world",
+  "version": "1.0.0",
+  "description": "打工人世界：开放世界上班模拟多人在线小游戏",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "license": "MIT",
+  "dependencies": { "ws": "^8.18.0" }
+}

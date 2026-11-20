@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>打工人世界 · 开放世界上班模拟</title>
+<style>
+:root{--bg:#1c2230;--panel:rgba(20,24,36,.82);--tx:#f2f4f8;--mut:#9aa4b8;--ac:#ffb84d;--ok:#5fd68a;--bad:#ff6b6b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10141d}}
+:root[data-theme="dark"]{--bg:#10141d}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden}
+canvas{display:block;width:100%;height:100%}
+.hud{position:fixed;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top,0px));display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}
+.box{background:var(--panel);border-radius:10px;padding:6px 10px;font-size:13px;backdrop-filter:blur(6px)}
+.bar{width:90px;height:7px;background:#ffffff22;border-radius:4px;overflow:hidden;margin-top:3px}
+.bar i{display:block;height:100%;width:0;transition:width .2s}
+#hint{position:fixed;left:50%;bottom:calc(70px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--panel);padding:8px 14px;border-radius:20px;font-size:14px;display:none;white-space:nowrap}
+#log{position:fixed;left:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));width:min(340px,60vw);max-height:130px;overflow:hidden;font-size:12px;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;pointer-events:none}
+#log div{background:var(--panel);padding:3px 8px;border-radius:6px;width:fit-content;max-width:100%}
+#chat{position:fixed;left:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));width:min(340px,70vw);display:none;padding:8px;border-radius:8px;border:1px solid var(--ac);background:var(--panel);color:var(--tx);font-size:14px}
+#over{position:fixed;inset:0;background:rgba(8,10,16,.82);display:flex;align-items:center;justify-content:center;z-index:5;padding:16px}
+#card{background:#222a3c;color:#f2f4f8;border-radius:16px;padding:24px;max-width:420px;width:100%;line-height:1.7;font-size:14px}
+#card h1{margin:0 0 6px;font-size:24px}
+#card input{width:100%;padding:9px;border-radius:8px;border:1px solid #556;background:#151a26;color:#fff;font-size:15px;margin:8px 0}
+#card button{width:100%;padding:11px;border:0;border-radius:8px;background:var(--ac);color:#222;font-weight:700;font-size:16px;cursor:pointer}
+.mut{color:var(--mut);font-size:12px}
+#mp{position:fixed;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));font-size:12px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud">
+  <div class="box" id="clock">Day 1 · 08:30</div>
+  <div class="box">精力<div class="bar"><i id="b-en" style="background:var(--ok)"></i></div></div>
+  <div class="box">压力<div class="bar"><i id="b-st" style="background:var(--bad)"></i></div></div>
+  <div class="box">项目<div class="bar"><i id="b-pr" style="background:var(--ac)"></i></div></div>
+  <div class="box" id="money">¥0</div>
+  <div class="box" id="task">目标：9:00 前到办公区打卡</div>
+</div>
+<div id="hint"></div>
+<div id="log"></div>
+<input id="chat" maxlength="60" placeholder="输入消息，回车发送，Esc 取消">
+<div class="box" id="mp">单人模式</div>
+<div id="over"><div id="card">
+  <h1>🏢 打工人世界</h1>
+  <div class="mut">开放世界 · 多人在线 · 上班模拟器</div>
+  <p>准时打卡、在工位搬砖完成项目、开会点头、茶水间续命，别被老板抓到摸鱼。下班发薪水！</p>
+  <p class="mut">WASD / 方向键移动（Shift 快走）· E 交互（工位按住）· 回车聊天<br>打开同一页面的其他同事会实时出现在世界里。</p>
+  <input id="nm" maxlength="8" placeholder="你的名字">
+  <button id="go">开始上班</button>
+</div></div>
+<script>
+(function(){
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const $=id=>document.getElementById(id);
+const W=2400,H=1500;
+let vw=0,vh=0,dpr=1;
+function rs(){dpr=window.devicePixelRatio||1;vw=innerWidth;vh=innerHeight;cv.width=vw*dpr;cv.height=vh*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',rs);rs();
+
+// ---- 世界 ----
+const zones=[
+ {id:'office',n:'开放办公区',x:150,y:150,w:1300,h:760,c:'#d9dde6',k:'zone'},
+ {id:'meet',n:'会议室',x:1550,y:150,w:700,h:420,c:'#cfd8e8',k:'zone'},
+ {id:'pantry',n:'茶水间',x:1550,y:660,w:700,h:250,c:'#e6dcc8',k:'zone'},
+ {id:'boss',n:'老板办公室',x:150,y:1010,w:520,h:340,c:'#d8cfc0',k:'zone'},
+ {id:'cafe',n:'楼下咖啡店',x:800,y:1060,w:460,h:300,c:'#e9d3bd',k:'zone'},
+ {id:'park',n:'街心公园',x:1450,y:1010,w:800,h:400,c:'#9fd18f',k:'zone'},
+];
+const desks=[];
+for(let r=0;r<3;r++)for(let c=0;c<5;c++)desks.push({x:260+c*240,y:260+r*220,w:130,h:70});
+const Z=id=>zones.find(z=>z.id===id);
+const inZ=(z,x,y)=>x>z.x&&x<z.x+z.w&&y>z.y&&y<z.y+z.h;
+const spots=[ // 交互点
+ {id:'printer',n:'打印机',x:1380,y:260,t:'print'},
+ {id:'coffee',n:'咖啡机',x:1650,y:760,t:'coffee'},
+ {id:'cafe',n:'咖啡柜台',x:1030,y:1120,t:'cafe'},
+ {id:'bench',n:'长椅',x:1800,y:1200,t:'bench'},
+ {id:'boss',n:'老板的桌子',x:400,y:1120,t:'report'},
+];
+
+// ---- 状态 ----
+const me={x:1000,y:960,vx:0,vy:0,name:'打工人'+(Math.floor(Math.random()*900)+100),col:'hsl('+Math.floor(Math.random()*360)+',70%,58%)',dir:1,act:'走',bub:'',bubT:0};
+const g={day:1,t:8*60+30,en:100,st:10,pr:0,money:0,done:0,late:false,paidLate:false,attend:0,fines:0,earned:0,run:false,over:false,dayStats:null};
+const keys={};
+let nearSpot=null,workHold=0,msgT=0;
+const peers=new Map(); // peer -> {x,y,name,col,bub,bubT,tx,ty,act}
+const boss={x:300,y:1150,tx:300,ty:1150,w:0,state:'idle'};
+let room=null;
+
+function fmt(t){return String(Math.floor(t/60)%24).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0')}
+function say(s,col){const d=document.createElement('div');d.textContent=s;if(col)d.style.color=col;const l=$('log');l.appendChild(d);while(l.children.length>6)l.removeChild(l.firstChild);setTimeout(()=>d.remove(),9000)}
+function toast(s,col){msgT=3;$('task').textContent=s;$('task').style.color=col||''}
+function inMeeting(){const h=g.t/60;return (h>=10&&h<11)||(h>=15&&h<16)}
+function curTask(){
+ const h=g.t/60;
+ if(h<9&&!g.late)return '目标：9:00 前到办公区打卡';
+ if(inMeeting())return '📅 开会了！去会议室（按 E 在场内点头）';
+ if(g.pr>=100)return '项目完成！';
+ if(g.en<25)return '精力不足，去茶水间或咖啡店续命';
+ if(g.st>80)return '压力爆表，去公园长椅坐坐';
+ if(h>=17.5)return '快下班了，冲刺项目！';
+ return '去工位按住 E 搬砖，推进项目';
+}
+
+// ---- 输入 ----
+addEventListener('keydown',e=>{
+ if(document.activeElement===$('chat')){
+  if(e.key==='Enter'){const v=$('chat').value.trim();if(v)sendChat(v);$('chat').value='';$('chat').style.display='none';$('chat').blur()}
+  else if(e.key==='Escape'){$('chat').style.display='none';$('chat').blur()}
+  return}
+ if(!g.run)return;
+ const k=e.key.toLowerCase();keys[k]=true;
+ if(e.key==='Enter'){$('chat').style.display='block';$('chat').focus();e.preventDefault()}
+ if(k==='e')interact(true);
+ if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k))e.preventDefault();
+});
+addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false});
+addEventListener('blur',()=>{for(const k in keys)keys[k]=false});
+
+function sendChat(t){
+ me.bub=t;me.bubT=5;say(me.name+'：'+t);
+ if(room)room.emit('chat',{n:me.name,t}).catch(()=>{});
+}
+
+// ---- 交互 ----
+function atDesk(){return desks.find(d=>Math.abs(me.x-(d.x+d.w/2))<90&&me.y>d.y+d.h&&me.y<d.y+d.h+90)}
+function interact(press){
+ if(g.over)return;
+ const h=g.t/60;
+ if(inMeeting()&&inZ(Z('meet'),me.x,me.y)){
+  if(press){g.attend++;me.bub='嗯嗯，有道理';me.bubT=2;g.earned+=5;g.money+=5;toast('点头 +¥5，会议出勤 +1','var(--ok)');g.st=Math.max(0,g.st-1)}
+  return}
+ if(atDesk()){ // 工位搬砖由持续按键处理
+  return}
+ if(!nearSpot||!press)return;
+ const s=nearSpot;
+ if(s.t==='coffee'){if(g.en>=100)return toast('精力已满');g.en=Math.min(100,g.en+25);g.st=Math.max(0,g.st-2);toast('茶水间咖啡 +25 精力','var(--ok)')}
+ if(s.t==='cafe'){if(g.money<15)return toast('钱不够了…','var(--bad)');g.money-=15;g.en=Math.min(100,g.en+45);g.st=Math.max(0,g.st-5);toast('买了杯拿铁 −¥15，精力 +45','var(--ok)')}
+ if(s.t==='bench'){g.st=Math.max(0,g.st-15);g.en=Math.min(100,g.en+5);toast('晒太阳发呆 压力 −15','var(--ok)');if(h>=9&&h<18&&!inMeeting()){g.pr=Math.max(0,g.pr-0);}}
+ if(s.t==='print'){if(g.pr<30)return toast('没什么好打印的');g.pr=Math.min(100,g.pr+8);toast('打印材料，项目 +8','var(--ok)')}
+ if(s.t==='report'){
+  if(g.pr>=100){g.pr=0;g.done++;g.money+=200;g.earned+=200;g.st=Math.max(0,g.st-10);toast('提交项目 🎉 奖金 +¥200','var(--ok)');say('老板：干得不错，继续保持！','var(--ac)')}
+  else{g.st=Math.min(100,g.st+8);toast('项目没做完就来汇报？压力 +8','var(--bad)');say('老板：怎么才这点进度？','var(--bad)')}
+ }
+}
+
+// ---- 老板巡视 ----
+function bossTick(dt){
+ const h=g.t/60,work=h>=9&&h<18;
+ boss.w-=dt;
+ if(!work){boss.tx=400;boss.ty=1150}
+ else if(boss.w<=0){
+  boss.w=6+Math.random()*8;
+  if(Math.random()<.55){const d=desks[Math.floor(Math.random()*desks.length)];boss.tx=d.x+60;boss.ty=d.y+130;boss.state='patrol'}
+  else{boss.tx=400;boss.ty=1150;boss.state='idle'}
+ }
+ const dx=boss.tx-boss.x,dy=boss.ty-boss.y,d=Math.hypot(dx,dy);
+ if(d>4){boss.x+=dx/d*70*dt;boss.y+=dy/d*70*dt}
+}
+
+// ---- 主逻辑 ----
+let last=0,working=false,workAcc=0,sendAcc=0,lastSent='';
+function update(dt){
+ if(g.over)return;
+ // 时间：1 秒 ≈ 1.6 游戏分钟
+ g.t+=dt*1.6;
+ const h=g.t/60;
+ if(h>=9&&!g.paidLate&&h<18){g.paidLate=true;if(!inZ(Z('office'),me.x,me.y)&&!inMeeting()){g.late=true;g.money-=50;g.fines+=50;toast('迟到！罚款 −¥50','var(--bad)');say('HR：你今天迟到了。','var(--bad)')}else{g.money+=30;g.earned+=30;toast('准时打卡 +¥30','var(--ok)')}}
+ if(h>=18){endDay();return}
+ // 移动
+ let ix=(keys['d']||keys['arrowright']?1:0)-(keys['a']||keys['arrowleft']?1:0);
+ let iy=(keys['s']||keys['arrowdown']?1:0)-(keys['w']||keys['arrowup']?1:0);
+ const m=Math.hypot(ix,iy);if(m>0){ix/=m;iy/=m}
+ const run=keys['shift']&&g.en>10;
+ const sp=(run?300:190)*(g.en<20?.65:1);
+ working=false;
+ if(keys['e']&&atDesk()&&h>=9){working=true}
+ if(working){ix=0;iy=0}
+ me.x=Math.max(20,Math.min(W-20,me.x+ix*sp*dt));
+ me.y=Math.max(20,Math.min(H-20,me.y+iy*sp*dt));
+ // 桌子碰撞（简单推出）
+ for(const d of desks){if(me.x>d.x-12&&me.x<d.x+d.w+12&&me.y>d.y-8&&me.y<d.y+d.h){const cx=me.x-(d.x+d.w/2),cy=me.y-(d.y+d.h/2);
+  if(Math.abs(cx/(d.w/2+12))>Math.abs(cy/(d.h/2+8)))me.x=cx>0?d.x+d.w+12:d.x-12;else me.y=cy>0?d.y+d.h:d.y-8}}
+ if(ix>0)me.dir=1;else if(ix<0)me.dir=-1;
+ me.moving=m>0;
+ if(run&&m>0)g.en-=dt*0.5;
+ // 搬砖
+ if(working){
+  workAcc+=dt;g.en-=dt*1.6;g.st+=dt*.35;
+  g.pr=Math.min(100,g.pr+dt*(g.en>25?2.6:1.2));
+  me.act='工作中';
+  if(g.pr>=100&&!g.notified){g.notified=true;toast('项目完成！去老板办公室提交','var(--ok)')}
+ }else{me.act=m>0?'走':'站';g.st-=dt*.05}
+ if(g.pr<100)g.notified=false;
+ if(inMeeting()&&!inZ(Z('meet'),me.x,me.y)){g.st+=dt*.15}
+ // 精力、压力
+ if(h>=9)g.en-=dt*.12;
+ g.en=Math.max(0,Math.min(100,g.en));g.st=Math.max(0,Math.min(100,g.st));
+ if(g.en<=0){g.st+=dt*.8}
+ // 老板抓摸鱼
+ const near=Math.hypot(boss.x-me.x,boss.y-me.y)<170;
+ if(near&&h>=9&&h<18&&!working&&!inMeeting()&&inZ(Z('office'),me.x,me.y)){
+  g.bossT=(g.bossT||0)+dt;
+  if(g.bossT>2.5){g.bossT=0;g.st=Math.min(100,g.st+6);g.money-=20;g.fines+=20;toast('被老板抓到摸鱼！罚款 −¥20','var(--bad)');say('老板：你站这儿干嘛？','var(--bad)')}
+ }else g.bossT=0;
+ if(g.st>=100&&!g.burn){g.burn=true;g.money-=40;g.fines+=40;toast('压力爆表，请假一小时 −¥40','var(--bad)');g.st=60;g.en=Math.max(g.en,40)}
+ if(g.st<90)g.burn=false;
+ // 最近交互点
+ nearSpot=null;for(const s of spots){if(Math.hypot(s.x-me.x,s.y-me.y)<75){nearSpot=s;break}}
+ bossTick(dt);
+ if(me.bubT>0)me.bubT-=dt;
+ for(const p of peers.values()){p.x+=(p.tx-p.x)*Math.min(1,dt*10);p.y+=(p.ty-p.y)*Math.min(1,dt*10);if(p.bubT>0)p.bubT-=dt}
+ // 联机同步
+ sendAcc+=dt;
+ if(room&&sendAcc>.1){
+  sendAcc=0;
+  const o={x:Math.round(me.x),y:Math.round(me.y),n:me.name,c:me.col,a:me.act,d:me.dir};
+  const s=JSON.stringify(o);
+  if(s!==lastSent){lastSent=s;room.presence(o).catch(()=>{})}
+ }
+ if(msgT>0){msgT-=dt;if(msgT<=0){$('task').style.color='';$('task').textContent=curTask()}}
+ else $('task').textContent=curTask();
+}
+
+function endDay(){
+ g.over=true;
+ const base=300,total=base+g.earned-g.fines;
+ g.money+=base;
+ const o=$('over');o.style.display='flex';
+ $('card').innerHTML='<h1>🌇 下班啦！第 '+g.day+' 天</h1><p>基本工资 ¥'+base+'<br>绩效/奖金 +¥'+g.earned+'<br>罚款 −¥'+g.fines+'<br>完成项目：'+g.done+' 个 · 会议出勤：'+g.attend+' 次<br><b>今日实发：¥'+total+'</b>（账户余额 ¥'+Math.round(g.money)+'）</p><button id="nx">明天继续上班</button>';
+ $('nx').onclick=()=>{g.day++;g.t=8*60+30;g.en=Math.min(100,g.en+60);g.st=Math.max(0,g.st-30);g.pr=0;g.earned=0;g.fines=0;g.attend=0;g.paidLate=false;g.late=false;g.over=false;g.burn=false;me.x=1000;me.y=960;o.style.display='none'};
+}
+
+// ---- 绘制 ----
+function drawPerson(x,y,col,name,act,dir,bub,isMe,mv){
+ const t=performance.now()/120,bob=mv?Math.sin(t)*2.5:0;
+ ctx.fillStyle='rgba(0,0,0,.22)';ctx.beginPath();ctx.ellipse(x,y+16,13,5,0,0,7);ctx.fill();
+ ctx.fillStyle='#2a2f44';
+ const l=mv?Math.sin(t)*4:0;ctx.fillRect(x-7,y+4,5,12+l);ctx.fillRect(x+2,y+4,5,12-l);
+ ctx.fillStyle=col;ctx.beginPath();ctx.roundRect(x-10,y-12+bob,20,20,6);ctx.fill();
+ ctx.fillStyle='#ffd9b3';ctx.beginPath();ctx.arc(x,y-20+bob,9,0,7);ctx.fill();
+ ctx.fillStyle='#333';ctx.fillRect(x+dir*3-1,y-22+bob,2,3);
+ ctx.fillStyle='#3a2a1f';ctx.beginPath();ctx.arc(x,y-24+bob,9,Math.PI,0);ctx.fill();
+ if(act==='工作中'){ctx.font='12px sans-serif';ctx.textAlign='center';ctx.fillText('⌨️',x+16,y-24)}
+ ctx.font='bold 12px system-ui,sans-serif';ctx.textAlign='center';
+ ctx.lineWidth=3;ctx.strokeStyle='rgba(0,0,0,.6)';ctx.strokeText(name,x,y-38);ctx.fillStyle=isMe?'#ffd54d':'#fff';ctx.fillText(name,x,y-38);
+ if(bub){ctx.font='13px system-ui,sans-serif';const w=ctx.measureText(bub).width+14;
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.roundRect(x-w/2,y-68,w,22,8);ctx.fill();
+  ctx.fillStyle='#222';ctx.fillText(bub,x,y-53)}
+}
+function draw(){
+ const cx=Math.max(0,Math.min(W-vw,me.x-vw/2)),cy=Math.max(0,Math.min(H-vh,me.y-vh/2));
+ const ox=W<vw?(vw-W)/2:-cx,oy=H<vh?(vh-H)/2:-cy;
+ ctx.fillStyle='#7fb069';ctx.fillRect(0,0,vw,vh);
+ ctx.save();ctx.translate(ox,oy);
+ // 地面与道路
+ ctx.fillStyle='#8cbf74';ctx.fillRect(0,0,W,H);
+ ctx.fillStyle='#4a4f5c';ctx.fillRect(0,930,W,70);
+ ctx.fillStyle='#e6e6e6';for(let x=0;x<W;x+=120)ctx.fillRect(x,962,60,6);
+ for(const z of zones){
+  ctx.fillStyle=z.c;ctx.fillRect(z.x,z.y,z.w,z.h);
+  if(z.id==='park'){ctx.fillStyle='#78b96a';for(let i=0;i<14;i++){ctx.beginPath();ctx.arc(z.x+60+i*52,z.y+(i%2?340:60),20,0,7);ctx.fill()}}
+  else{ctx.strokeStyle='#555d70';ctx.lineWidth=6;ctx.strokeRect(z.x,z.y,z.w,z.h)}
+  ctx.fillStyle='rgba(30,36,52,.55)';ctx.font='bold 16px system-ui,sans-serif';ctx.textAlign='left';ctx.fillText(z.n,z.x+12,z.y+24);
+ }
+ // 门
+ ctx.fillStyle='#8cbf74';ctx.fillRect(700,900,120,24);ctx.fillRect(480,1000,100,24);ctx.fillRect(950,1000,100,24);
+ // 工位
+ for(const d of desks){
+  ctx.fillStyle='#b98e5e';ctx.fillRect(d.x,d.y,d.w,d.h);
+  ctx.fillStyle='#222a38';ctx.fillRect(d.x+45,d.y+8,40,26);
+  ctx.fillStyle='#5ad1ff';ctx.fillRect(d.x+48,d.y+11,34,18);
+  ctx.fillStyle='#555';ctx.beginPath();ctx.arc(d.x+d.w/2,d.y+d.h+34,16,0,7);ctx.fill();
+ }
+ // 会议室长桌
+ const mz=Z('meet');ctx.fillStyle='#8a6a48';ctx.fillRect(mz.x+150,mz.y+130,400,150);
+ ctx.fillStyle='#fff';ctx.fillRect(mz.x+250,mz.y+20,200,14);
+ ctx.fillStyle=inMeeting()?'#ff6b6b':'#999';ctx.font='13px sans-serif';ctx.textAlign='center';ctx.fillText(inMeeting()?'会议进行中 · 按 E 点头':'空闲（10点和15点开会）',mz.x+350,mz.y+210);
+ // 互动点
+ for(const s of spots){
+  const on=nearSpot===s;ctx.fillStyle=on?'#ffb84d':'#6a7186';ctx.beginPath();ctx.arc(s.x,s.y,on?26:22,0,7);ctx.fill();
+  ctx.font='20px sans-serif';ctx.textAlign='center';ctx.fillStyle='#fff';
+  ctx.fillText({print:'🖨️',coffee:'☕',cafe:'🧋',bench:'🪑',report:'📋'}[s.t],s.x,s.y+7);
+  ctx.font='11px sans-serif';ctx.fillStyle='#222';ctx.fillText(s.n,s.x,s.y+42);
+ }
+ // 人物（按 y 排序）
+ const list=[{y:boss.y,f:()=>drawPerson(boss.x,boss.y,'#8b1e2d','老板','',1,'',false,Math.hypot(boss.tx-boss.x,boss.ty-boss.y)>5)}];
+ for(const p of peers.values())list.push({y:p.y,f:()=>drawPerson(p.x,p.y,p.col,p.name,p.act,p.d||1,p.bubT>0?p.bub:'',false,p.act==='走')});
+ list.push({y:me.y,f:()=>drawPerson(me.x,me.y,me.col,me.name+'（我）',me.act,me.dir,me.bubT>0?me.bub:'',true,me.moving)});
+ list.sort((a,b)=>a.y-b.y).forEach(o=>o.f());
+ ctx.restore();
+ // 夜色
+ const h=g.t/60;let a=0;if(h<7)a=.35;else if(h>16.5)a=Math.min(.35,(h-16.5)*.25);
+ if(a>0){ctx.fillStyle='rgba(10,14,40,'+a+')';ctx.fillRect(0,0,vw,vh)}
+ // 工作进度环
+ if(working){ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(vw/2-70,vh/2+60,140,10);ctx.fillStyle='#ffb84d';ctx.fillRect(vw/2-70,vh/2+60,140*g.pr/100,10)}
+}
+function hud(){
+ $('clock').textContent='第 '+g.day+' 天 · '+fmt(g.t)+(g.t/60>=17?' 🌆':g.t/60<9?' 🌅':' ☀️');
+ $('b-en').style.width=g.en+'%';$('b-st').style.width=g.st+'%';$('b-pr').style.width=g.pr+'%';
+ $('money').textContent='¥'+Math.round(g.money);
+ const hn=$('hint');let t='';
+ if(inMeeting()&&inZ(Z('meet'),me.x,me.y))t='按 E 点头附和';
+ else if(atDesk()&&g.t/60>=9)t='按住 E 工作（推进项目）';
+ else if(atDesk())t='还没到 9 点，先摸会儿 😌';
+ else if(nearSpot)t='按 E：'+nearSpot.n;
+ hn.style.display=t&&!g.over?'block':'none';hn.textContent=t;
+}
+function loop(ts){
+ const dt=Math.min(.05,(ts-last)/1000||0);last=ts;
+ if(g.run){update(dt);}
+ draw();hud();requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ---- 多人联机 ----
+function onPeers(ch){
+ const live=new Set(ch.peers.filter(p=>!p.isMe&&p.kind==='viewer').map(p=>p.peer));
+ for(const p of ch.peers){
+  if(p.isMe||p.kind!=='viewer')continue;
+  const d=p.presence||{};if(typeof d.x!=='number')continue;
+  let o=peers.get(p.peer);
+  if(!o){o={x:d.x,y:d.y,bub:'',bubT:0};peers.set(p.peer,o);say('👋 '+(String(d.n||'同事').slice(0,10))+' 来上班了')}
+  o.tx=d.x;o.ty=d.y;o.name=String(d.n||'同事').slice(0,10);o.col=/^hsl\(\d+,70%,58%\)$/.test(d.c)?d.c:'#8ab';o.act=d.a;o.d=d.d;
+ }
+ for(const k of [...peers.keys()])if(!live.has(k)){const o=peers.get(k);say('🚪 '+o.name+' 下线了');peers.delete(k)}
+ $('mp').textContent='在线同事：'+(peers.size+1);
+}
+// ---- 自建 WebSocket 联机（claude.ai 之外使用）----
+const DEFAULT_SERVER='';      // GitHub Pages 部署时填你的服务器，如 'wss://office-world.onrender.com'
+const SELF_HOSTED=false;      // 由 server.js 托管页面时会自动替换为 true
+function serverUrl(){
+ const q=new URLSearchParams(location.search).get('server');
+ if(q)return q;
+ if(DEFAULT_SERVER)return DEFAULT_SERVER;
+ if(SELF_HOSTED)return (location.protocol==='https:'?'wss://':'ws://')+location.host;
+ return '';
+}
+function wsRoom(url){
+ let ws,ready=false,backoff=1000;const peers=new Map(),pH=[],cH=[];
+ const notify=()=>{const arr=[...peers].map(([id,d])=>({peer:id,isMe:false,sameTab:false,kind:'viewer',presence:d}));pH.forEach(f=>f({peers:arr,joined:[],left:[],updated:[]}))};
+ function open(){
+  ws=new WebSocket(url);
+  ws.onopen=()=>{ready=true;backoff=1000;lastSent=''};
+  ws.onmessage=ev=>{let m;try{m=JSON.parse(ev.data)}catch(e){return}
+   if(m.t==='hello'){peers.clear();(m.list||[]).forEach(o=>peers.set(o.id,o.d));notify()}
+   else if(m.t==='p'){peers.set(m.id,m.d);notify()}
+   else if(m.t==='left'){peers.delete(m.id);notify()}
+   else if(m.t==='chat'){cH.forEach(f=>f({peer:m.id,isMe:false,sameTab:false,data:m.d}))}};
+  ws.onclose=()=>{ready=false;peers.clear();notify();$('mp').textContent='重连中…';setTimeout(open,backoff);backoff=Math.min(10000,backoff*2)};
+  ws.onerror=()=>{try{ws.close()}catch(e){}};
+ }
+ open();
+ const send=o=>{if(ready)ws.send(JSON.stringify(o));return Promise.resolve()};
+ return{presence:d=>send({t:'p',d}),emit:(topic,d)=>send({t:topic,d}),onPeers:f=>{pH.push(f)},on:(topic,f)=>{if(topic==='chat')cH.push(f)}};
+}
+async function connect(){
+ try{if(window.claude&&claude.use)room=await claude.use('room')}catch(e){room=null}
+ if(!room){const u=serverUrl();if(u){try{room=wsRoom(u)}catch(e){room=null}}}
+ if(!room){$('mp').textContent='单人模式（未连接联机服务器）';return}
+ room.onPeers(onPeers);
+ room.on('chat',m=>{
+  if(m.isMe&&m.sameTab)return;
+  const d=m.data||{},t=String(d.t||'').slice(0,60),n=String(d.n||'同事').slice(0,10);
+  say(n+'：'+t);const o=peers.get(m.peer);if(o){o.bub=t;o.bubT=5}
+ });
+}
+$('nm').value=me.name;
+$('go').onclick=()=>{
+ const v=$('nm').value.trim();if(v)me.name=v.slice(0,8);
+ $('over').style.display='none';g.run=true;
+ $('task').textContent=curTask();
+ connect();
+};
+})();
+</script>
+</body>
+</html>
