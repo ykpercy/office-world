@@ -11,7 +11,8 @@
 *{box-sizing:border-box}
 html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden}
 canvas{display:block;width:100%;height:100%}
-.hud{position:fixed;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top,0px));display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}
+#top{position:fixed;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top,0px));pointer-events:none;z-index:2}
+.hud{display:flex;gap:8px;flex-wrap:wrap}
 .box{background:var(--panel);border-radius:10px;padding:6px 10px;font-size:13px;backdrop-filter:blur(6px)}
 .bar{width:90px;height:7px;background:#ffffff22;border-radius:4px;overflow:hidden;margin-top:3px}
 .bar i{display:block;height:100%;width:0;transition:width .2s}
@@ -25,7 +26,7 @@ canvas{display:block;width:100%;height:100%}
 #card input{width:100%;padding:9px;border-radius:8px;border:1px solid #556;background:#151a26;color:#fff;font-size:16px;margin:8px 0}
 #card button{width:100%;padding:11px;border:0;border-radius:8px;background:var(--ac);color:#222;font-weight:700;font-size:16px;cursor:pointer}
 .mut{color:var(--mut);font-size:12px}
-#mp{position:fixed;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));font-size:12px}
+#mp{font-size:12px}
 html,body{touch-action:none;-webkit-user-select:none;user-select:none}
 #touch{display:none}
 @media (pointer:coarse){
@@ -38,15 +39,14 @@ html,body{touch-action:none;-webkit-user-select:none;user-select:none}
  #bR.on{background:#5fd68a;color:#222}
  #bC{bottom:calc(144px + env(safe-area-inset-bottom,0px));width:56px;height:56px;font-size:20px}
  #hint{bottom:calc(190px + env(safe-area-inset-bottom,0px))}
- #log{bottom:auto;top:calc(150px + env(safe-area-inset-top,0px));width:min(300px,70vw)}
- #mp{right:auto;left:8px;bottom:auto;top:calc(120px + env(safe-area-inset-top,0px))}
+ #log{position:static;margin-top:8px;width:min(300px,70vw)}
  #chat{bottom:auto;top:calc(60px + env(safe-area-inset-top,0px));width:calc(100vw - 16px);z-index:6}
 }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="hud">
+<div id="top"><div class="hud">
   <div class="box" id="clock">Day 1 · 08:30</div>
   <div class="box">精力<div class="bar"><i id="b-en" style="background:var(--ok)"></i></div></div>
   <div class="box">压力<div class="bar"><i id="b-st" style="background:var(--bad)"></i></div></div>
@@ -54,10 +54,11 @@ html,body{touch-action:none;-webkit-user-select:none;user-select:none}
   <div class="box" id="money">¥0</div>
   <div class="box" id="task">目标：9:00 前到办公区打卡</div>
 </div>
-<div id="hint"></div>
+<div class="box" id="mp" style="margin-top:8px;width:fit-content">单人模式</div>
 <div id="log"></div>
+</div>
+<div id="hint"></div>
 <input id="chat" maxlength="60" placeholder="输入消息，回车发送，Esc 取消">
-<div class="box" id="mp">单人模式</div>
 <div id="touch">
   <div id="joy"><div id="knob"></div></div>
   <div class="tb" id="bE">E</div>
