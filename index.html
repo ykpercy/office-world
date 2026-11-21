@@ -487,22 +487,20 @@ const Music=(()=>{
   g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f);f.connect(g);g.connect(bus);s.start(t);s.stop(t+dur+.02);
  }
  function sched(){
-  if(next<ac.currentTime-.5)next=ac.currentTime+.05;
-  while(next<ac.currentTime+.3){
+  while(next<ac.currentTime+.6){
    const bar=Math.floor(step/8)%8,s=step%8,t=next;
+   if(t<ac.currentTime-.03){step++;next+=E;continue}          // 主线程卡顿导致迟到：跳过该音，保持节拍网格不移位
    if(s===0)bus.gain.setTargetAtTime(lvl[bar],t,.4);                     // 每小节的音量起伏
    const m=mel[bar][s];if(m&&m[0])tone(sq,N(m[0]),t,E*m[1]*.95,.068);    // 主旋律：短长结合，句末留白
    const bo=bassOff[s];if(bo!=null)bass(N(roots[bar]+bo),t,E*(s?1.2:2.4),.34);
    if(s===3||s===7)tone(sq2,N(tri[bar][s===3?1:2]),t,E*1.6,.035);       // 和声点缀
-   if(s===0||(s===4&&bar%4!==3))kick(t);
-   if(bar%4!==3){                                                       // 第 4、8 小节撤掉军鼓和踩镲，作为呼吸段
-    if(s===2||s===6)nz(t,'bandpass',2200,.05,.1);
-    if(s%2)nz(t,'highpass',8000,.018,.035);
-   }
+   if(s===0||s===4)kick(t);                                           // 每小节第 1、3 拍底鼓始终保留
+   if(bar%4!==3&&(s===2||s===6))nz(t,'bandpass',2200,.05,.1);          // 军鼓（第 2、4 拍），呼吸段撤掉
+   if(s%2)nz(t,'highpass',8000,bar%4!==3?.018:.012,.035);              // 踩镲保持稳定的八分音符脉冲
    step++;next+=E;
   }
  }
- function play(){unlock();if(!ac||timer)return;next=ac.currentTime+.1;sched();timer=setInterval(sched,100)}
+ function play(){unlock();if(!ac||timer)return;next=ac.currentTime+.1;sched();timer=setInterval(sched,60)}
  function toggle(){
   on=!on;try{localStorage.setItem('ow_music',on?'1':'0')}catch(e){}
   label();if(!ac){unlock()}
