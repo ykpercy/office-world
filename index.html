@@ -27,6 +27,7 @@ canvas{display:block;width:100%;height:100%}
 #card button{width:100%;padding:11px;border:0;border-radius:8px;background:var(--ac);color:#222;font-weight:700;font-size:16px;cursor:pointer}
 .mut{color:var(--mut);font-size:12px}
 #mp{font-size:12px}
+#mu{pointer-events:auto;cursor:pointer;user-select:none}
 html,body{touch-action:none;-webkit-user-select:none;user-select:none}
 #touch{display:none}
 @media (pointer:coarse){
@@ -53,6 +54,7 @@ html,body{touch-action:none;-webkit-user-select:none;user-select:none}
   <div class="box">项目<div class="bar"><i id="b-pr" style="background:var(--ac)"></i></div></div>
   <div class="box" id="money">¥0</div>
   <div class="box" id="task">目标：9:00 前到办公区打卡</div>
+  <div class="box" id="mu" title="背景音乐（M）">🔊</div>
 </div>
 <div class="box" id="mp" style="margin-top:8px;width:fit-content">单人模式</div>
 <div id="log"></div>
@@ -143,6 +145,7 @@ addEventListener('keydown',e=>{
  const k=e.key.toLowerCase();keys[k]=true;
  if(e.key==='Enter'){$('chat').style.display='block';$('chat').focus();e.preventDefault()}
  if(k==='e')interact(true);
+ if(k==='m')Music.toggle();
  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k))e.preventDefault();
 });
 addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false});
@@ -426,6 +429,66 @@ $('chat').addEventListener('blur',()=>setTimeout(resetZoom,100));
  document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 })();
 $('nm').value=me.name;
+// ---- 背景音乐（WebAudio 实时合成的 lo-fi 循环）----
+const Music=(()=>{
+ let ac=null,bus,master,timer=null,next=0,step=0,on=true,noise=null;
+ try{on=localStorage.getItem('ow_music')!=='0'}catch(e){}
+ const E=60/76/2,N=m=>440*Math.pow(2,(m-69)/12);
+ const chords=[[48,55,59,64],[45,52,55,60],[50,57,60,65],[43,50,53,59]]; // Cmaj7 · Am7 · Dm7 · G7
+ const arp=[0,1,2,3,2,1,3,2],hit=[1,0,1,1,0,1,1,0];
+ function label(){const m=$('mu');if(m)m.textContent=on?'🔊':'🔇'}
+ function unlock(){
+  if(!ac){
+   const C=window.AudioContext||window.webkitAudioContext;if(!C)return;
+   ac=new C();master=ac.createGain();master.gain.value=on?0.5:0;master.connect(ac.destination);
+   bus=ac.createGain();bus.connect(master);
+   const d=ac.createDelay(1);d.delayTime.value=E*1.5;const fb=ac.createGain();fb.gain.value=.32;
+   const lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1600;const wet=ac.createGain();wet.gain.value=.3;
+   bus.connect(d);d.connect(lp);lp.connect(fb);fb.connect(d);lp.connect(wet);wet.connect(master);
+   const b=ac.createBuffer(1,ac.sampleRate*.3,ac.sampleRate),a=b.getChannelData(0);for(let i=0;i<a.length;i++)a[i]=Math.random()*2-1;noise=b;
+  }
+  if(ac.state!=='running')ac.resume();
+ }
+ function tone(type,f,t,dur,vol,att,cut){
+  const o=ac.createOscillator(),g=ac.createGain(),fl=ac.createBiquadFilter();
+  o.type=type;o.frequency.value=f;fl.type='lowpass';fl.frequency.value=cut||3000;
+  g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+att);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(fl);fl.connect(g);g.connect(bus);o.start(t);o.stop(t+dur+.05);
+ }
+ function kick(t){
+  const o=ac.createOscillator(),g=ac.createGain();o.frequency.setValueAtTime(130,t);o.frequency.exponentialRampToValueAtTime(42,t+.16);
+  g.gain.setValueAtTime(.3,t);g.gain.exponentialRampToValueAtTime(.0001,t+.25);o.connect(g);g.connect(bus);o.start(t);o.stop(t+.3);
+ }
+ function hat(t,type,freq,vol,dur){
+  const s=ac.createBufferSource(),f=ac.createBiquadFilter(),g=ac.createGain();s.buffer=noise;f.type=type;f.frequency.value=freq;
+  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f);f.connect(g);g.connect(bus);s.start(t);s.stop(t+dur+.02);
+ }
+ function sched(){
+  if(next<ac.currentTime-.5)next=ac.currentTime+.05;
+  while(next<ac.currentTime+.3){
+   const bar=Math.floor(step/8)%4,s=step%8,ch=chords[bar],t=next;
+   if(s===0)ch.slice(1).forEach(m=>tone('triangle',N(m),t,E*8,.05,.5,900));
+   if(s===0||s===3)tone('sine',N(ch[0]),t,E*(s?2:2.8),.24,.02,500);
+   if(s===4)tone('sine',N(ch[1]-12),t,E*2,.18,.02,500);
+   if(hit[s])tone('triangle',N(ch[arp[s]]+12),t,E*1.8,.05,.01,2400);
+   if(s===0||s===4)kick(t);
+   if(s===2||s===6)hat(t,'bandpass',1800,.06,.12);
+   if(s%2===1)hat(t,'highpass',7000,.025,.05);
+   step++;next+=E*(s%2===0?1.14:.86);
+  }
+ }
+ function play(){unlock();if(!ac||timer)return;next=ac.currentTime+.1;sched();timer=setInterval(sched,100)}
+ function toggle(){
+  on=!on;try{localStorage.setItem('ow_music',on?'1':'0')}catch(e){}
+  label();if(!ac){unlock()}
+  if(ac){master.gain.setTargetAtTime(on?0.5:0,ac.currentTime,.1);if(on&&ac.state!=='running')ac.resume()}
+ }
+ document.addEventListener('visibilitychange',()=>{if(!ac)return;if(document.hidden)ac.suspend();else if(on)ac.resume()});
+ label();
+ const mu=$('mu');if(mu)mu.addEventListener('pointerdown',e=>{e.preventDefault();toggle()});
+ return{unlock,play,toggle};
+})();
+
 // ---- 账号与存档 ----
 const API=(()=>{const u=serverUrl();return u?u.replace(/^ws/,'http').replace(/\/+$/,''):''})();
 let auth={token:null,name:null};
@@ -437,16 +500,17 @@ function saveNow(keep){if(!auth.token)return;api('/api/save',{method:'PUT',keep:
 function startGame(){
  if(auth.token)me.name=auth.name;
  else{const v=$('nm').value.trim();if(v)me.name=API?('游客'+v).slice(0,8):v.slice(0,8)}
- $('over').style.display='none';g.run=true;resetZoom();$('task').textContent=curTask();connect();
+ $('over').style.display='none';g.run=true;resetZoom();Music.play();$('task').textContent=curTask();connect();
 }
 async function doAuth(kind){
+ Music.unlock();
  const name=$('nm').value.trim(),password=$('pw').value;$('amsg').textContent='请稍候…';
  try{const j=await api('/api/'+kind,{method:'POST',body:JSON.stringify({name,password})});
   auth={token:j.token,name:j.name};try{localStorage.setItem('ow_token',j.token)}catch(e){}
   applySave(j.save);startGame()}
  catch(e){$('amsg').textContent=e.message}
 }
-$('go').onclick=()=>startGame();
+$('go').onclick=()=>{Music.unlock();startGame()};
 $('bl').onclick=()=>doAuth('login');$('br').onclick=()=>doAuth('register');
 $('lo').onclick=()=>{try{localStorage.removeItem('ow_token')}catch(e){}location.reload()};
 setInterval(()=>{if(g.run&&!g.over)saveNow()},15000);
