@@ -433,21 +433,21 @@ $('nm').value=me.name;
 const Music=(()=>{
  let ac=null,bus,master,timer=null,next=0,step=0,on=true,noise=null,sq,sq2;
  try{on=localStorage.getItem('ow_music')!=='0'}catch(e){}
- const E=60/136/2,N=m=>440*Math.pow(2,(m-69)/12);
+ const E=60/124/2,N=m=>440*Math.pow(2,(m-69)/12);
  // 8 小节循环：C G Am F C G F G；旋律为 [音高, 持续步数]（1 步 = 八分音符）
  const roots=[48,43,45,41,48,43,41,43];
  const tri=[[60,64,67],[59,62,67],[57,60,64],[57,60,65],[60,64,67],[59,62,67],[57,60,65],[59,62,67]];
  const mel=[
-  [[76,1],[79,1],[84,2],[79,1],[76,1],[79,2]],
-  [[83,1],[79,1],[74,2],[79,1],[83,1],[86,2]],
-  [[81,1],[76,1],[72,2],[76,1],[81,1],[84,2]],
-  [[77,1],[81,1],[84,2],[81,1],[77,1],[81,2]],
-  [[84,1],[83,1],[84,1],[79,1],[76,2],[79,1],[72,1]],
-  [[79,1],[83,1],[86,2],[83,1],[79,1],[74,2]],
-  [[77,1],[81,1],[84,1],[81,1],[89,2],[84,1],[81,1]],
-  [[83,1],[86,1],[83,1],[79,1],[74,1],[79,1],[83,2]]
+  [[76,1],[79,1],[84,3],[0,1],[79,1],[76,1]],
+  [[83,1],[79,1],[74,2],[0,1],[79,1],[83,2]],
+  [[81,1],[76,1],[72,3],[0,1],[76,2]],
+  [[77,1],[81,1],[84,3],[0,3]],
+  [[84,1],[83,1],[84,1],[79,1],[76,3],[0,1]],
+  [[79,1],[83,1],[86,3],[0,1],[79,2]],
+  [[77,1],[81,1],[84,1],[81,1],[89,3],[0,1]],
+  [[83,1],[79,1],[74,2],[0,4]]
  ].map(bar=>{const m={};let p=0;bar.forEach(([n,l])=>{m[p]=[n,l];p+=l});return m});
- const bassOff=[0,12,0,12,7,12,7,12];
+ const bassOff=[0,null,null,12,7,null,12,null],lvl=[.85,.9,.95,.8,.9,.95,1,.7];
  function label(){const m=$('mu');if(m)m.textContent=on?'🔊':'🔇'}
  function pulse(d){const n=24,re=new Float32Array(n+1),im=new Float32Array(n+1);for(let k=1;k<=n;k++)re[k]=2/(k*Math.PI)*Math.sin(k*Math.PI*d);return ac.createPeriodicWave(re,im)}
  function unlock(){
@@ -456,7 +456,7 @@ const Music=(()=>{
    ac=new C();master=ac.createGain();master.gain.value=on?0.4:0;master.connect(ac.destination);
    bus=ac.createGain();bus.connect(master);
    const d=ac.createDelay(1);d.delayTime.value=E*1.5;const fb=ac.createGain();fb.gain.value=.25;
-   const lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2500;const wet=ac.createGain();wet.gain.value=.16;
+   const lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2500;const wet=ac.createGain();wet.gain.value=.22;
    bus.connect(d);d.connect(lp);lp.connect(fb);fb.connect(d);lp.connect(wet);wet.connect(master);
    const b=ac.createBuffer(1,ac.sampleRate*.3,ac.sampleRate),a=b.getChannelData(0);for(let i=0;i<a.length;i++)a[i]=Math.random()*2-1;noise=b;
    sq=pulse(.25);sq2=pulse(.125);
@@ -483,12 +483,15 @@ const Music=(()=>{
   if(next<ac.currentTime-.5)next=ac.currentTime+.05;
   while(next<ac.currentTime+.3){
    const bar=Math.floor(step/8)%8,s=step%8,t=next;
-   const m=mel[bar][s];if(m)tone(sq,N(m[0]),t,E*m[1]*.92,.075);         // 主旋律（25% 脉冲波）
-   tone('triangle',N(roots[bar]+bassOff[s]),t,E*.9,.3);                  // 三角波贝斯
-   if(s%2===1)tone(sq2,N(tri[bar][[0,1,2,1][(s-1)/2]]),t,E*.8,.04);     // 和声琶音（12.5% 脉冲波）
-   if(s===0||s===4)kick(t);
-   if(s===2||s===6)nz(t,'bandpass',2200,.09,.1);                        // 军鼓
-   nz(t,'highpass',8000,s%2?.03:.018,.035);                             // 踩镲
+   if(s===0)bus.gain.setTargetAtTime(lvl[bar],t,.4);                     // 每小节的音量起伏
+   const m=mel[bar][s];if(m&&m[0])tone(sq,N(m[0]),t,E*m[1]*.95,.07);     // 主旋律（含休止，留出换气）
+   const bo=bassOff[s];if(bo!=null)tone('triangle',N(roots[bar]+bo),t,E*(s?1.1:2.6),.27);
+   if(s===3||s===7)tone(sq2,N(tri[bar][s===3?1:2]),t,E*1.6,.035);       // 稀疏的和声点缀
+   if(s===0||(s===4&&bar%4!==3))kick(t);
+   if(bar%4!==3){                                                       // 第 4、8 小节撤掉鼓组，作为呼吸段
+    if(s===2||s===6)nz(t,'bandpass',2200,.06,.1);
+    if(s%2)nz(t,'highpass',8000,.02,.035);
+   }
    step++;next+=E;
   }
  }
