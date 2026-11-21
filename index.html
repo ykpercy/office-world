@@ -431,7 +431,7 @@ $('chat').addEventListener('blur',()=>setTimeout(resetZoom,100));
 $('nm').value=me.name;
 // ---- 背景音乐（WebAudio 实时合成的 8-bit 像素风循环）----
 const Music=(()=>{
- let ac=null,bus,master,timer=null,next=0,step=0,on=true,noise=null,sq,sq2;
+ let ac=null,bus,master,timer=null,next=0,step=0,on=true,noise=null,sq,sq2,dbus,bassBus;
  try{on=localStorage.getItem('ow_music')!=='0'}catch(e){}
  const E=60/118/2,N=m=>440*Math.pow(2,(m-69)/12);
  // 8 小节循环：C G Am F C G F G；旋律为 [音高, 持续步数]（1 步 = 八分音符）
@@ -454,7 +454,7 @@ const Music=(()=>{
   if(!ac){
    const C=window.AudioContext||window.webkitAudioContext;if(!C)return;
    ac=new C();master=ac.createGain();master.gain.value=on?0.38:0;master.connect(ac.destination);
-   bus=ac.createGain();const sf=ac.createBiquadFilter();sf.type='lowpass';sf.frequency.value=4500;bus.connect(sf);sf.connect(master);
+   bus=ac.createGain();const sf=ac.createBiquadFilter();sf.type='lowpass';sf.frequency.value=4500;bus.connect(sf);sf.connect(master);dbus=ac.createGain();dbus.connect(master);bassBus=ac.createGain();bassBus.connect(bus); // 鼓组走独立干声通道，不进回声；贝斯单独成组，便于避让底鼓
    const d=ac.createDelay(1);d.delayTime.value=E*1.5;const fb=ac.createGain();fb.gain.value=.25;
    const lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2500;const wet=ac.createGain();wet.gain.value=.22;
    bus.connect(d);d.connect(lp);lp.connect(fb);fb.connect(d);lp.connect(wet);wet.connect(master);
@@ -476,15 +476,16 @@ const Music=(()=>{
   g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+.012);
   g.gain.exponentialRampToValueAtTime(vol*.5,t+dur*.5);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
   [[1,1],[2,.32],[3,.1]].forEach(([k,a])=>{const o=ac.createOscillator(),h=ac.createGain();o.type='sine';o.frequency.value=f*k;h.gain.value=a;o.connect(h);h.connect(g);o.start(t);o.stop(t+dur+.03)});
-  g.connect(fl);fl.connect(bus);
+  g.connect(fl);fl.connect(bassBus);
  }
- function kick(t){
-  const o=ac.createOscillator(),g=ac.createGain();o.frequency.setValueAtTime(150,t);o.frequency.exponentialRampToValueAtTime(45,t+.12);
-  g.gain.setValueAtTime(.32,t);g.gain.exponentialRampToValueAtTime(.0001,t+.18);o.connect(g);g.connect(bus);o.start(t);o.stop(t+.22);
+ function kick(t,v){ // 短促的底鼓，同时让贝斯瞬间避让（侧链），低频不再挤在一起
+  const o=ac.createOscillator(),g=ac.createGain();o.frequency.setValueAtTime(120,t);o.frequency.exponentialRampToValueAtTime(55,t+.09);
+  g.gain.setValueAtTime(.26*v,t);g.gain.exponentialRampToValueAtTime(.0001,t+.14);o.connect(g);g.connect(dbus);o.start(t);o.stop(t+.18);
+  bassBus.gain.setValueAtTime(.5,t);bassBus.gain.linearRampToValueAtTime(1,t+.14);
  }
  function nz(t,type,freq,vol,dur){
   const s=ac.createBufferSource(),f=ac.createBiquadFilter(),g=ac.createGain();s.buffer=noise;f.type=type;f.frequency.value=freq;
-  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f);f.connect(g);g.connect(bus);s.start(t);s.stop(t+dur+.02);
+  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f);f.connect(g);g.connect(dbus);s.start(t);s.stop(t+dur+.02);
  }
  function sched(){
   while(next<ac.currentTime+.6){
@@ -494,9 +495,9 @@ const Music=(()=>{
    const m=mel[bar][s];if(m&&m[0])tone(sq,N(m[0]),t,E*m[1]*.95,.068);    // 主旋律：短长结合，句末留白
    const bo=bassOff[s];if(bo!=null)bass(N(roots[bar]+bo),t,E*(s?1.2:2.4),.34);
    if(s===3||s===7)tone(sq2,N(tri[bar][s===3?1:2]),t,E*1.6,.035);       // 和声点缀
-   if(s===0||s===4)kick(t);                                           // 每小节第 1、3 拍底鼓始终保留
-   if(bar%4!==3&&(s===2||s===6))nz(t,'bandpass',2200,.05,.1);          // 军鼓（第 2、4 拍），呼吸段撤掉
-   if(s%2)nz(t,'highpass',8000,bar%4!==3?.018:.012,.035);              // 踩镲保持稳定的八分音符脉冲
+   if(s===0)kick(t,1);else if(s===4)kick(t,.6);                                           // 每小节第 1、3 拍底鼓始终保留
+   if(bar%4!==3&&(s===2||s===6))nz(t,'bandpass',2400,.035,.07);          // 军鼓（第 2、4 拍），呼吸段撤掉
+   if(s===3||s===7)nz(t,'highpass',8000,bar%4!==3?.016:.011,.035);              // 踩镲保持稳定的八分音符脉冲
    step++;next+=E;
   }
  }
