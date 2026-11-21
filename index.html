@@ -71,7 +71,13 @@ html,body{touch-action:none;-webkit-user-select:none;user-select:none}
   <p>准时打卡、在工位搬砖完成项目、开会点头、茶水间续命，别被老板抓到摸鱼。下班发薪水！</p>
   <p class="mut">WASD / 方向键移动（Shift 快走）· E 交互（工位按住）· 回车聊天<br>手机：左下摇杆移动，右侧按钮 E 交互（工位按住）/ 快走 / 聊天<br>打开同一页面的其他同事会实时出现在世界里。</p>
   <input id="nm" maxlength="8" placeholder="你的名字">
+  <div id="auth" style="display:none">
+    <input id="pw" type="password" maxlength="64" placeholder="密码（6 位以上）" autocomplete="current-password">
+    <div style="display:flex;gap:8px"><button id="bl">登录</button><button id="br" style="background:#5fd68a">注册</button></div>
+    <div id="amsg" class="mut" style="min-height:20px;margin:6px 0"></div>
+  </div>
   <button id="go">开始上班</button>
+  <div id="lo" class="mut" style="display:none;cursor:pointer;text-decoration:underline;margin-top:10px;text-align:center">退出登录 / 换账号</div>
 </div></div>
 <script>
 (function(){
@@ -251,10 +257,10 @@ function update(dt){
 function endDay(){
  g.over=true;
  const base=300,total=base+g.earned-g.fines;
- g.money+=base;
+ g.money+=base;saveNow();
  const o=$('over');o.style.display='flex';
  $('card').innerHTML='<h1>🌇 下班啦！第 '+g.day+' 天</h1><p>基本工资 ¥'+base+'<br>绩效/奖金 +¥'+g.earned+'<br>罚款 −¥'+g.fines+'<br>完成项目：'+g.done+' 个 · 会议出勤：'+g.attend+' 次<br><b>今日实发：¥'+total+'</b>（账户余额 ¥'+Math.round(g.money)+'）</p><button id="nx">明天继续上班</button>';
- $('nx').onclick=()=>{g.day++;g.t=8*60+30;g.en=Math.min(100,g.en+60);g.st=Math.max(0,g.st-30);g.pr=0;g.earned=0;g.fines=0;g.attend=0;g.paidLate=false;g.late=false;g.over=false;g.burn=false;me.x=1000;me.y=960;o.style.display='none'};
+ $('nx').onclick=()=>{g.day++;g.t=8*60+30;g.en=Math.min(100,g.en+60);g.st=Math.max(0,g.st-30);g.pr=0;g.earned=0;g.fines=0;g.attend=0;g.paidLate=false;g.late=false;g.over=false;g.burn=false;me.x=1000;me.y=960;o.style.display='none';saveNow()};
 }
 
 // ---- 绘制 ----
@@ -382,7 +388,7 @@ function wsRoom(url){
 }
 async function connect(){
  try{if(window.claude&&claude.use)room=await claude.use('room')}catch(e){room=null}
- if(!room){const u=serverUrl();if(u){try{room=wsRoom(u)}catch(e){room=null}}}
+ if(!room){const u=serverUrl();if(u){try{room=wsRoom(auth.token?u+(u.includes('?')?'&':'?')+'token='+encodeURIComponent(auth.token):u)}catch(e){room=null}}}
  if(!room){$('mp').textContent='单人模式（未连接联机服务器）';return}
  room.onPeers(onPeers);
  room.on('chat',m=>{
@@ -420,12 +426,47 @@ $('chat').addEventListener('blur',()=>setTimeout(resetZoom,100));
  document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 })();
 $('nm').value=me.name;
-$('go').onclick=()=>{
- const v=$('nm').value.trim();if(v)me.name=v.slice(0,8);
- $('over').style.display='none';g.run=true;resetZoom();
- $('task').textContent=curTask();
- connect();
-};
+// ---- 账号与存档 ----
+const API=(()=>{const u=serverUrl();return u?u.replace(/^ws/,'http').replace(/\/+$/,''):''})();
+let auth={token:null,name:null};
+async function api(p,o){o=o||{};const h={'Content-Type':'application/json'};if(auth.token)h.Authorization='Bearer '+auth.token;
+ const r=await fetch(API+p,{method:o.method||'GET',headers:h,body:o.body,keepalive:!!o.keep});
+ const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('请求失败 '+r.status));return j}
+function applySave(sv){sv=sv||{};g.day=sv.day||1;g.money=sv.money||0;g.done=sv.done||0;g.en=sv.en==null?100:sv.en;g.st=sv.st==null?10:sv.st;if(sv.col)me.col=sv.col}
+function saveNow(keep){if(!auth.token)return;api('/api/save',{method:'PUT',keep:keep,body:JSON.stringify({day:g.day,money:Math.round(g.money),done:g.done,en:Math.round(g.en),st:Math.round(g.st),col:me.col})}).catch(()=>{})}
+function startGame(){
+ if(auth.token)me.name=auth.name;
+ else{const v=$('nm').value.trim();if(v)me.name=API?('游客'+v).slice(0,8):v.slice(0,8)}
+ $('over').style.display='none';g.run=true;resetZoom();$('task').textContent=curTask();connect();
+}
+async function doAuth(kind){
+ const name=$('nm').value.trim(),password=$('pw').value;$('amsg').textContent='请稍候…';
+ try{const j=await api('/api/'+kind,{method:'POST',body:JSON.stringify({name,password})});
+  auth={token:j.token,name:j.name};try{localStorage.setItem('ow_token',j.token)}catch(e){}
+  applySave(j.save);startGame()}
+ catch(e){$('amsg').textContent=e.message}
+}
+$('go').onclick=()=>startGame();
+$('bl').onclick=()=>doAuth('login');$('br').onclick=()=>doAuth('register');
+$('lo').onclick=()=>{try{localStorage.removeItem('ow_token')}catch(e){}location.reload()};
+setInterval(()=>{if(g.run&&!g.over)saveNow()},15000);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)saveNow(true)});
+addEventListener('pagehide',()=>saveNow(true));
+(async()=>{
+ if(!API)return;
+ $('go').disabled=true;$('go').textContent='连接服务器中…（首次可能需要几十秒）';
+ let ok=false;
+ try{
+  const st=await api('/api/status');if(!st.accounts)return;ok=true;
+  $('auth').style.display='block';$('go').textContent='游客试玩（不保存）';
+  let t=null;try{t=localStorage.getItem('ow_token')}catch(e){}
+  if(t){auth.token=t;
+   try{const j=await api('/api/save');auth.name=j.name;applySave(j.save);$('nm').value=j.name;$('nm').disabled=true;
+    $('auth').style.display='none';$('go').textContent='继续游戏（'+j.name+'）';$('lo').style.display='block'}
+   catch(e){auth.token=null;try{localStorage.removeItem('ow_token')}catch(_){}}}
+ }catch(e){}
+ finally{$('go').disabled=false;if(!ok)$('go').textContent='开始上班'}
+})();
 })();
 </script>
 </body>
